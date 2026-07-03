@@ -1,0 +1,73 @@
+# atlas-connectors — CI + image publish to DEV registry.
+# No Cloud Run service exists for connectors in DEV (ingestion is simulated —
+# the simulator CLI ships inside this image and is run ad hoc / as a job).
+# Push to main → test, build, push image. Manual run from any branch/tag:
+# Actions → this workflow → Run workflow.
+name: deploy-dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # keyless GCP auth (WIF) — no SA keys, per platform doctrine
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: fos-dev-500119
+  REGION: europe-west9
+  REGISTRY: europe-west9-docker.pkg.dev/fos-dev-500119/atlas-dev-docker
+  IMAGE_NAME: atlas-connectors
+  WIF_PROVIDER: projects/341244752207/locations/global/workloadIdentityPools/atlas-github-pool/providers/atlas-github-oidc
+  DEPLOYER_SA: atlas-dev-deployer@fos-dev-500119.iam.gserviceaccount.com
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: pytest -q
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute build version
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="$(echo "${GITHUB_REF_NAME}" | tr '/' '-')-$(git rev-parse --short HEAD)-r${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Build version: ${VERSION}"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build & push image
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          IMAGE="${REGISTRY}/${IMAGE_NAME}"
+          docker build \
+            --build-arg BUILD_VERSION="${{ steps.ver.outputs.version }}" \
+            -t "${IMAGE}:${{ steps.ver.outputs.version }}" \
+            -t "${IMAGE}:$(git rev-parse --short HEAD)" .
+          docker push --all-tags "${IMAGE}"
