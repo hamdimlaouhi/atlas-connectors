@@ -17,7 +17,9 @@ def source_hash(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def stamp(record: RawRecord, *, mapping_rule_version: str = "v0.1", confidence: float = 1.0) -> SourceMetadata:
+def stamp(
+    record: RawRecord, *, mapping_rule_version: str = "v0.1", confidence: float = 1.0
+) -> SourceMetadata:
     """Build the SourceMetadata for a raw record at ingestion time."""
     return SourceMetadata(
         source_system=record.source_system,
