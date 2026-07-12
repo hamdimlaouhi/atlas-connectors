@@ -71,3 +71,14 @@ jobs:
             -t "${IMAGE}:${{ steps.ver.outputs.version }}" \
             -t "${IMAGE}:$(git rev-parse --short HEAD)" .
           docker push --all-tags "${IMAGE}"
+
+      # Roll the sim connector service when it exists (created by atlas-infra
+      # terraform, DEV/DEMO only — OPS-C4). Absent service = skip, not fail.
+      - name: Deploy atlas-dev-sim (if provisioned)
+        run: |
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:${{ steps.ver.outputs.version }}"
+          if gcloud run services describe atlas-dev-sim --region "${REGION}" >/dev/null 2>&1; then
+            gcloud run services update atlas-dev-sim --region "${REGION}" --image "${IMAGE}"
+          else
+            echo "atlas-dev-sim not provisioned — image pushed only."
+          fi

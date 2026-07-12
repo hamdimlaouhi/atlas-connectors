@@ -23,7 +23,15 @@ CanonicalRecordType = Literal[
 
 
 class SourceMetadata(BaseModel):
-    """DORA L1 provenance — stamped on every record, never optional."""
+    """DORA L1 provenance — stamped on every record, never optional.
+
+    The `origin`/`batch_id`/`seed`/`preset_id`/`generated_by` fields are the
+    OPTIONAL simulation-provenance extension (atlas-contracts Appendix F,
+    Atlas_Simulation_Conception §3 G2): a live feed leaves them None; the sim
+    service stamps `origin="SIMULATION"` in-kernel so ingestion can never
+    receive an untagged synthetic batch. Additive only — existing semantics
+    are unchanged.
+    """
 
     source_system: str
     source_message_id: str
@@ -31,6 +39,11 @@ class SourceMetadata(BaseModel):
     ingested_at: datetime
     mapping_rule_version: str = "v0.1"
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    origin: str | None = None
+    batch_id: UUID | None = None
+    seed: int | None = None
+    preset_id: str | None = None
+    generated_by: str | None = None
 
 
 class RawRecord(BaseModel):

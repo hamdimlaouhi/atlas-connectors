@@ -7,9 +7,10 @@ single-adapter unit the scheduler composes.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID, uuid4
 
-from atlas_connectors.kernel.base import BaseConnector, CanonicalRecord
+from atlas_connectors.kernel.base import BaseConnector, CanonicalRecord, CanonicalRecordType
 from atlas_connectors.kernel.provenance import stamp
 from atlas_connectors.kernel.publisher import PublisherPort
 
@@ -24,8 +25,11 @@ def run_adapter(connector: BaseConnector, publisher: PublisherPort, *, tenant_id
     published = 0
     for raw in connector.extract():
         record = CanonicalRecord(
+            event_id=uuid4(),
             tenant_id=tenant_id,
-            record_type=raw.record_type,
+            # Adapter-internal type names map to the canonical enum at publish
+            # time (see base.py); adapters own that mapping before reaching here.
+            record_type=cast(CanonicalRecordType, raw.record_type),
             payload=raw.payload,
             source_metadata=stamp(raw),
             trace_id=uuid4(),

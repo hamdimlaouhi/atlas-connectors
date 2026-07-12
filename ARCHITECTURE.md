@@ -66,9 +66,17 @@ src/atlas_connectors/
     publisher.py    # PublisherPort, PubSubPublisher, StdoutPublisher
     retry.py        # backoff + jitter
     runner.py       # run one adapter end-to-end
+    http_push.py    # HttpPushPublisher — Pub/Sub push envelope over HTTP to Core (local/demo)
   adapters/
     camt053/parser.py       # camt.053 XML → RawRecord (v0.1)
     psd2_bridge/client.py   # BridgeAPI client stub (v0.1; consent-expiry TODO)
+  sim_service/      # Simulation console engine (FastAPI, `atlas-sim-service`) — see D-6
+    settings.py     # ATLAS_SIM_* (enabled=False fail-closed, env, publisher binding, caps)
+    models.py       # sim-json record models (manual-mode contract) + GeneratedBatch
+    generators/     # PresetGenerator registry — one module per Conception §5 preset
+    emitter.py      # GeneratedBatch → kernel stamp() → CanonicalRecord → PublisherPort
+    api.py          # /sim/v1 {presets, dispatch, health} — all G1-gated (404 fail-closed)
+    main.py         # app factory + trace middleware + uvicorn entrypoint
   simulator.py      # DEV CanonicalRecord simulator CLI (atlas-simulate)
   settings.py
 tests/
@@ -87,6 +95,7 @@ Dockerfile · Makefile · pyproject.toml
 ## Build order
 
 1. **Kernel + simulator (this scaffold)** — publisher port, provenance, simulator CLI. *Acceptance:* `atlas-simulate --count 3 --tenant <uuid> --stdout` emits 3 valid CanonicalRecord JSON messages; with `--topic` they land in `atlas-dev-canonical-records` and (once atlas-core deploys) produce canonical rows + audit entries.
+1bis. **Sim connector service (`sim_service/`, landed)** — the Atlas Simulation console **engine** ([`Atlas_Simulation_Conception.md`](../atlas-tech-docs/specs/Atlas_Simulation_Conception.md) §3/§5, ADR-SIM-001: the console is a synthetic connector). Seven Phase-1 preset generators (deterministic `random.Random(seed)`, test-range IBANs, fabricated names) emit sim-json records through the real kernel path (`stamp()` adds `origin=SIMULATION`, `batch_id`, `seed`, `preset_id`, `generated_by`) to Pub/Sub or HTTP-push. Governance (run registry, roles, ledger) stays in Core's ops module — this service only generates, stamps and publishes. *Acceptance:* `/sim/v1/*` 404s unless `ATLAS_SIM_ENABLED=true` and env ≠ production (G1); identical `(preset, params, seed)` ⇒ identical payloads + source_hashes; ≤5 000 records/run.
 2. **Slice 1 — PSD2/Bridge (US-020)**: real BridgeAPI client, OAuth consent + 90-day expiry handling, balances + 7-day transactions. *Acceptance:* sandbox pull publishes records; bad records quarantined by Core's firewall.
 3. **Slice 2 — camt.053 file ingestion + SAP S/4HANA (US-021) + invoice intake → Mindee (US-022).**
 4. Later: MT940/EBICS live, Sage, Oracle; Phase 2 payment-emission adapters (only after Core HITL `execute` gate exists).
@@ -100,3 +109,4 @@ Verification: `make test` (pytest), `make lint` (ruff + mypy), `make simulate` (
 - **D-3 Simulator is production code of this repo** — it is the DEV stand-in for all adapters and the driver of the DEV acceptance flow (spec §9/§14).
 - **D-4 Local message models are placeholders** — authoritative schemas belong to `atlas-contracts`; reconcile on first publish there (flagged, R-2 contract drift).
 - **D-5 Read-only Phase 1 is structural** — no adapter exposes a write path; payment emission arrives only as new, HITL-gated adapters in Phase 2.
+- **D-6 Simulation console engine is a synthetic connector in this repo** (ADR-SIM-001, Conception §10) — it injects only through the real pipeline (kernel stamp → publish), never writes the CDM directly, and is fail-closed (`enabled=False` default, 404 in production). It is the repo's one HTTP deployable; the `SourceMetadata` sim-provenance fields (`origin`, `batch_id`, `seed`, `preset_id`, `generated_by`) are **optional additive** placeholders mirroring the atlas-contracts Appendix-F extension (reconcile per D-4). The Docker image's default entrypoint is now `atlas-sim-service`; the CLI stays available via `docker run --entrypoint atlas-simulate`.

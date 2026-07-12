@@ -17,6 +17,11 @@ dependencies = [
 dev-gcp = [
     "google-cloud-pubsub>=2.21",
 ]
+service = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",
@@ -25,6 +30,7 @@ dev = [
 
 [project.scripts]
 atlas-simulate = "atlas_connectors.simulator:main"
+atlas-sim-service = "atlas_connectors.sim_service.main:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/atlas_connectors"]
@@ -40,6 +46,12 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.11"
 strict = true
 mypy_path = "src"
+
+[[tool.mypy.overrides]]
+# google-cloud-pubsub ships no py.typed marker; the publisher wraps it behind
+# the PublisherPort so untyped surface never leaks past kernel/publisher.py.
+module = "google.cloud.*"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
