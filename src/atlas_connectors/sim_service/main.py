@@ -52,10 +52,15 @@ app = create_app()
 
 
 def run() -> None:
+    import os
+
     import uvicorn
 
     settings = SimSettings()
-    uvicorn.run(app, host="0.0.0.0", port=settings.port)  # noqa: S104 — container binding
+    # Cloud Run injects PORT (default 8080) — it wins over the local default
+    # (8095); ignoring it fails the startup probe and the revision never serves.
+    port = int(os.environ.get("PORT", str(settings.port)))
+    uvicorn.run(app, host="0.0.0.0", port=port)  # noqa: S104 — container binding
 
 
 if __name__ == "__main__":
